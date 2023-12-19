@@ -39,11 +39,29 @@ final class SearchableViewModel: ObservableObject {
     @Published private(set) var allRestaurants: [Restaurant] = []
     @Published private(set) var filteredRestaurants: [Restaurant] = []
     @Published var searchText: String = ""
+    @Published var searchScope: SearchScopeOption = .all
+    @Published private(set) var allSearchScope: [SearchScopeOption] = []
+    
+    
     let manager = RestaurantManager()
     private var cancellables = Set<AnyCancellable>()
     
     var isSearching: Bool {
         !searchText.isEmpty
+    }
+    
+    enum SearchScopeOption: Hashable {
+        case all
+        case cuisine(option: CuisineOption)
+        
+        var title: String {
+            switch self {
+            case .all:
+                return "All"
+            case .cuisine(option: let option):
+                return option.rawValue.capitalized
+            }
+        }
     }
     
     init() {
@@ -52,21 +70,36 @@ final class SearchableViewModel: ObservableObject {
     
     private func addSubscribers() {
         $searchText
+            .combineLatest($searchScope)
             .debounce(for: 0.3, scheduler: DispatchQueue.main)
-            .sink { [weak self] searchText in
-                self?.filterRestaurants(searchText: searchText)
+            .sink { [weak self] (searchText, searchScope) in
+                self?.filterRestaurants(searchText: searchText, currentSearchScope: searchScope)
             }
             .store(in: &cancellables)
     }
     
-    private func filterRestaurants(searchText: String) {
+    
+    
+    private func filterRestaurants(searchText: String, currentSearchScope: SearchScopeOption) {
         guard !searchText.isEmpty else {
             filteredRestaurants = []
+            searchScope = .all
             return
         }
         
+        //Filter on search scope
+        var restaurantInScope = allRestaurants
+        switch currentSearchScope {
+        case .all:
+            break
+        case .cuisine(let option):
+            restaurantInScope = allRestaurants.filter({ $0.cuisine == option })
+        }
+        
+        
+        // Filter on search text
         let search = searchText.lowercased()
-        filteredRestaurants = allRestaurants.filter({ restaurant in
+        filteredRestaurants = restaurantInScope.filter({ restaurant in
             let titleContainsSearch = restaurant.title.lowercased().contains(search)
             let cuisineContainsSearch = restaurant.cuisine.rawValue.lowercased().contains(search)
             
@@ -77,6 +110,9 @@ final class SearchableViewModel: ObservableObject {
     func loadRestaurants() async {
         do {
            allRestaurants = try await manager.getAllRestaurants()
+            
+            let allCuisines = Set(allRestaurants.map { $0.cuisine })
+            allSearchScope = [.all] + allCuisines.map({ SearchScopeOption.cuisine(option: $0)})
         } catch  {
             print(error)
         }
@@ -95,8 +131,17 @@ struct SearchBootcamp: View {
                     restaurantRow(restaurant: restaurant)
                 }
                 .padding()
+                
+//                Text("ViewModel is searching: \(viewModel.isSearching.description)")
+//                searchChildView()
             }
             .searchable(text: $viewModel.searchText, placement: .automatic, prompt: Text("Search restaurants..."))
+            .searchScopes($viewModel.searchScope, scopes: {
+                ForEach(viewModel.allSearchScope, id: \.self) { scope in
+                    Text(scope.title)
+                        .tag(scope)
+                }
+            })
             .navigationTitle("Restaurantes")
             .task {
                 await viewModel.loadRestaurants()
@@ -114,6 +159,15 @@ struct SearchBootcamp: View {
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.black.opacity(0.05))
+    }
+}
+
+
+struct searchChildView: View {
+    @Environment(\.isSearching) private var isSearching
+    
+    var body: some View {
+        Text("Chil view is searching: \(isSearching.description)")
     }
 }
 
