@@ -50,6 +50,10 @@ final class SearchableViewModel: ObservableObject {
         !searchText.isEmpty
     }
     
+    var showSearchSuggestions: Bool {
+        searchText.count < 5
+    }
+    
     enum SearchScopeOption: Hashable {
         case all
         case cuisine(option: CuisineOption)
@@ -118,6 +122,45 @@ final class SearchableViewModel: ObservableObject {
         }
     }
     
+    func getSearchSuggestions() -> [String]{
+        guard showSearchSuggestions else { return [] }
+        
+        var suggestions: [String] = []
+        
+        let search = searchText.lowercased()
+        if search.contains("bu") {
+            suggestions.append("Burger")
+        }
+        if search.contains("mo") {
+            suggestions.append("Moça")
+        }
+        
+        suggestions.append(CuisineOption.italian.rawValue.capitalized)
+        suggestions.append(CuisineOption.japanese.rawValue.capitalized)
+        suggestions.append(CuisineOption.angolana.rawValue.capitalized)
+        suggestions.append(CuisineOption.american.rawValue.capitalized)
+        
+        return suggestions
+    }
+    
+    func getSearchRestaurant() -> [Restaurant] {
+        guard showSearchSuggestions else { return [] }
+        
+        var suggestions: [Restaurant] = []
+        
+        let search = searchText.lowercased()
+        
+        if search.contains("ita") {
+            suggestions.append(contentsOf:  allRestaurants.filter({ $0.cuisine == .italian }))
+        }
+        
+        if search.contains("an") {
+            suggestions.append(contentsOf:  allRestaurants.filter({ $0.cuisine == .angolana }))
+        }
+        
+        return suggestions
+    }
+    
 }
 
 struct SearchBootcamp: View {
@@ -128,7 +171,10 @@ struct SearchBootcamp: View {
         ScrollView {
             VStack(spacing: 20) {
                 ForEach(viewModel.isSearching ? viewModel.filteredRestaurants : viewModel.allRestaurants) { restaurant in
-                    restaurantRow(restaurant: restaurant)
+                    NavigationLink(value: restaurant, label: {
+                        restaurantRow(restaurant: restaurant)
+                    })
+                    .foregroundStyle(.black)
                 }
                 .padding()
                 
@@ -142,10 +188,25 @@ struct SearchBootcamp: View {
                         .tag(scope)
                 }
             })
+            .searchSuggestions({
+                ForEach(viewModel.getSearchSuggestions(), id: \.self) { suggestion in
+                    Text(suggestion)
+                        .searchCompletion(suggestion)
+                }
+                ForEach(viewModel.getSearchRestaurant(), id: \.self) { suggestion in
+                    NavigationLink(value: suggestion) {
+                        Text(suggestion.title)
+                    }
+                       
+                }
+            })
             .navigationTitle("Restaurantes")
             .task {
                 await viewModel.loadRestaurants()
            }
+            .navigationDestination(for: Restaurant.self) { restaurant in
+                Text(restaurant.title.uppercased())
+            }
         }
     }
     
